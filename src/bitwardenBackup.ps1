@@ -2,18 +2,30 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# Run this script to backup your Bitwarden vault.
+# Also creates a scheduled task.
+# 
+# For more info about how the data is stored, see:
 # https://bitwarden.com/help/data-storage/
+#
+# For a way to decrypt the data, see:
+# https://github.com/GurpreetKang/BitwardenDecrypt
 
 # TODO
 # purge
 # versioning
-# add links
 # 6 hour fail check
 
 # constants
 $appRoot = Join-Path -Path $env:AppData -ChildPath "BitwardenBackup"
 $appLogFile = Join-Path -Path $appRoot -ChildPath "logs\logs.txt"
 $appBackups = Join-Path -Path $appRoot -ChildPath "backups"
+
+$hcDomain = "hc-ping.com"
+$hcSlug = "bitwarden-backup"
+
+$scheduledTaskName = "BitwardenBackupTask"
+$scheduledTaskDescription = "Task to backup Bitwarden data"
 
 function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
@@ -27,17 +39,21 @@ function Start-Main {
   }
 }
 
+function Get-PingUrl {
+  "https://$hcDomain/$env:HC_PING_KEY/$hcSlug"
+}
+
 function Ping-Success {
   param([string]$Message)
 
-  $pingUrl = "https://hc-ping.com/$env:HC_PING_KEY/bitwarden-backup"
+  $pingUrl = Get-PingUrl
   Invoke-RestMethod -Uri $pingUrl -Method Post -Body $Message | Out-Null
 }
 
 function Ping-Fail {
   param([string]$Message)
 
-  $pingUrl = "https://hc-ping.com/$env:HC_PING_KEY/bitwarden-backup"
+  $pingUrl = Get-PingUrl
   Invoke-RestMethod -Uri $pingUrl/fail -Method Post -Body $Message | Out-Null
 }
 
@@ -48,7 +64,7 @@ function Set-PingKey {
   }
 
   Write-Host "To continue, you need to create a HealthChecks account."
-  Write-Host "Go to https://healthchecks.io/ and set up a check called 'bitwarden-backup'."
+  Write-Host "Go to https://healthchecks.io/ and set up a check called '$hcSlug'."
   Write-Host "Then go to Settings > Ping key and hit Create."
   $pingKey = Read-Host -Prompt 'Input your HealthChecks ping key'
   if (!$pingKey) {
@@ -110,8 +126,7 @@ function Start-Backup {
 }
 
 function New-Task {
-  $taskName = "BitwardenBackupTask"
-  $scheduledTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+  $scheduledTask = Get-ScheduledTask -TaskName $scheduledTaskName -ErrorAction SilentlyContinue
 
   if ($scheduledTask) {
     Write-Host "Scheduled task already exists."
@@ -120,7 +135,7 @@ function New-Task {
   
   $action = New-ScheduledTaskAction -Execute "cmd" -Argument "/c start /min `"`" pwsh -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $PSCommandPath"
   $trigger = New-ScheduledTaskTrigger -Daily -At 3am
-  Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $taskName -Description "Task to backup Bitwarden data" | Out-Null
+  Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $scheduledTaskName -Description $scheduledTaskDescription | Out-Null
   Write-Host "Created new scheduled task."
 }
 
