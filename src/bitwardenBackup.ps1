@@ -6,7 +6,6 @@ $ErrorActionPreference = "Stop"
 
 # TODO
 # purge
-# health checks env
 # versioning
 # add links
 # 6 hour fail check
@@ -19,6 +18,7 @@ $appBackups = Join-Path -Path $appRoot -ChildPath "backups"
 function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
   try {
+    Set-PingKey
     Start-Backup
     New-Task
   }
@@ -27,21 +27,38 @@ function Start-Main {
   }
 }
 
-# Set your Healthchecks.io ping URL
-$pingUrl = "https://hc-ping.com/$pingKey/bitwarden-backup"
-
 function Ping-Success {
   param([string]$Message)
 
+  $pingUrl = "https://hc-ping.com/$env:HC_PING_KEY/bitwarden-backup"
   Invoke-RestMethod -Uri $pingUrl -Method Post -Body $Message | Out-Null
 }
 
 function Ping-Fail {
   param([string]$Message)
 
+  $pingUrl = "https://hc-ping.com/$env:HC_PING_KEY/bitwarden-backup"
   Invoke-RestMethod -Uri $pingUrl/fail -Method Post -Body $Message | Out-Null
 }
 
+function Set-PingKey {
+  if ($env:HC_PING_KEY) {
+    Write-Host "Ping key already set."
+    return
+  }
+
+  Write-Host "To continue, you need to create a HealthChecks account."
+  Write-Host "Go to https://healthchecks.io/ and set up a check called 'bitwarden-backup'."
+  Write-Host "Then go to Settings > Ping key and hit Create."
+  $pingKey = Read-Host -Prompt 'Input your HealthChecks ping key'
+  if (!$pingKey) {
+    Write-Warning "Need to set up a ping key to continue!"
+    exit
+  }
+
+  $env:HC_PING_KEY = $pingKey
+  [Environment]::SetEnvironmentVariable('HC_PING_KEY', $pingKey, 'User')
+}
 
 function Start-Backup {
   Write-Host 'Starting Bitwarden backup.'
