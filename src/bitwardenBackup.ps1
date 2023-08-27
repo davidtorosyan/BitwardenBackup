@@ -42,6 +42,10 @@ $backupName = "data_$timestamp.json"
 # Combine the destination folder and filename
 $backupJson = Join-Path -Path $backupDirectory -ChildPath $backupName
 
+if (Test-Path -Path $backupJson -PathType Leaf) {
+  Write-Warning "Backup file already exists, is sync running?: $backupJson"
+  exit
+}
 
 # Copy the file to the destination
 try {
