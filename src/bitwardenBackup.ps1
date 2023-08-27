@@ -25,6 +25,7 @@ $hcSlug = "bitwarden-backup"
 
 $scheduledTaskName = "BitwardenBackupTask"
 $scheduledTaskDescription = "Task to backup Bitwarden data"
+$scheduledTaskTime = '3am'
 
 function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
@@ -135,9 +136,10 @@ function New-Task {
   # do this complicated incantation to have a very minimal window pop up
   # anything else requires admin permissions
   $action = New-ScheduledTaskAction -Execute "cmd" -Argument "/c start /min `"`" pwsh -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $PSCommandPath"
-  $trigger = New-ScheduledTaskTrigger -Daily -At 3am
+  $trigger = New-ScheduledTaskTrigger -Daily -At $scheduledTaskTime
   Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $scheduledTaskName -Description $scheduledTaskDescription | Out-Null
-  Write-Host "Created new scheduled task."
+  Write-Host "Created new scheduled task called '$scheduledTaskName', set to run daily at $scheduledTaskTime."
+  Write-Host "If you need to adjust it, do so in Task Scheduler."
 }
 
 Start-Main
