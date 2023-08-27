@@ -14,7 +14,6 @@ $ErrorActionPreference = "Stop"
 # TODO
 # purge
 # versioning
-# 6 hour fail check
 
 # constants
 $appRoot = Join-Path -Path $env:AppData -ChildPath "BitwardenBackup"
@@ -133,6 +132,8 @@ function New-Task {
     return
   }
   
+  # do this complicated incantation to have a very minimal window pop up
+  # anything else requires admin permissions
   $action = New-ScheduledTaskAction -Execute "cmd" -Argument "/c start /min `"`" pwsh -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $PSCommandPath"
   $trigger = New-ScheduledTaskTrigger -Daily -At 3am
   Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $scheduledTaskName -Description $scheduledTaskDescription | Out-Null
