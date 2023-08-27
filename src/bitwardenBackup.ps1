@@ -2,42 +2,55 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# https://bitwarden.com/help/data-storage/
+
 # TODO
 # purge
-# health checks
+# health checks env
 # versioning
+# add links
+# 6 hour fail check
 
 # constants
 $appRoot = Join-Path -Path $env:AppData -ChildPath "BitwardenBackup"
 $appLogFile = Join-Path -Path $appRoot -ChildPath "logs\logs.txt"
 $appBackups = Join-Path -Path $appRoot -ChildPath "backups"
 
-function _main {
+function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
   try {
-    runBackup
-    scheduleTask
+    Start-Backup
+    New-Task
   }
   finally {
     Stop-Transcript
   }
 }
 
+# Set your Healthchecks.io ping URL
+$pingUrl = "https://hc-ping.com/$pingKey/bitwarden-backup"
 
-function runBackup {
+function Ping-Success {
+  param([string]$Message)
+
+  Invoke-RestMethod -Uri $pingUrl -Method Post -Body $Message | Out-Null
+}
+
+function Ping-Fail {
+  param([string]$Message)
+
+  Invoke-RestMethod -Uri $pingUrl/fail -Method Post -Body $Message | Out-Null
+}
+
+
+function Start-Backup {
   Write-Host 'Starting Bitwarden backup.'
 
-  # https://bitwarden.com/help/data-storage/
-
-  # Set your Healthchecks.io ping URL
-  $pingUrl = "https://hc-ping.com/YOUR_PING_URL"
-
-  # Set the source and destination paths
+  # Check source and destination
   $dataJson = "$env:AppData\Bitwarden\data.json"
-
   if (-not (Test-Path -Path $dataJson -PathType Leaf)) {
-    # Invoke-RestMethod -Uri $pingUrl -Method Post -StatusCode 400 -Body "Source file not found."
-    Write-Warning "Unable to find data.json file. Have you installed Bitwarden? https://bitwarden.com/download/"
+    Write-Warning "Unable to find data.json. Have you installed Bitwarden? https://bitwarden.com/download/"
+    Ping-Fail "Unable to find data.json"
     return
   }
 
@@ -54,16 +67,15 @@ function runBackup {
   }
   else {
     Write-Warning "Date string not found in the file."
+    Ping-Fail "Unable to find date string in data.json"
     return
   }
 
-  # Generate a timestamp for the new filename
+  # Check to see if the backup already exists
   $backupName = "data_$timestamp.json"
-
-  # Combine the destination folder and filename
   $backupJson = Join-Path -Path $appBackups -ChildPath $backupName
-
   if (Test-Path -Path $backupJson -PathType Leaf) {
+    # don't ping failure, since this could happen from just manually running too soon
     Write-Warning "Backup file already exists, is sync running?: $backupJson"
     return
   }
@@ -72,16 +84,15 @@ function runBackup {
   try {
     Copy-Item -Path $dataJson -Destination $backupJson -ErrorAction Stop
     Write-Host "Successfully backed up file to $backupJson"
-    # Invoke-RestMethod -Uri $pingUrl -Method Post -StatusCode 200 -Body "File copied to $backupJson"
+    Ping-Success "Backed up file to $backupJson"
   }
   catch {
-    # Invoke-RestMethod -Uri $pingUrl -Method Post -StatusCode 500 -Body $errorMessage
     Write-Warning "Failed to copy file with error: $($_.Exception.Message)"
-    return
+    Ping-Fail "Failed to copy file to backup location"
   }
 }
 
-function scheduleTask {
+function New-Task {
   $taskName = "BitwardenBackupTask"
   $scheduledTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 
@@ -96,4 +107,4 @@ function scheduleTask {
   Write-Host "Created new scheduled task."
 }
 
-_main
+Start-Main
