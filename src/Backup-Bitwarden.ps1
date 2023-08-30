@@ -64,7 +64,7 @@ $RetentionConfig = @{
   Daily   = 7
   Weekly  = 4
   Monthly = 6
-  Yearly  = 1
+  Yearly  = 2
 }
 
 $PruningPatterns = @{
