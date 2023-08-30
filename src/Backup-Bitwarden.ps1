@@ -131,7 +131,7 @@ function Set-PingKey {
   }
 
   Write-Host "To continue, you need to create a HealthChecks account."
-  Write-Host "Go to https://healthchecks.io/ and set up a check called '$hcSlug'."
+  Write-Host "Go to https://healthchecks.io/ and set up checks called '$hcSlugBackup' and '$hcSlugRecent'."
   Write-Host "Then go to Settings > Ping key and hit Create."
   $pingKey = Read-Host -Prompt 'Input your HealthChecks ping key'
   if (!$pingKey) {
