@@ -86,6 +86,7 @@ class BackupException : System.Exception {
 function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
   try {
+    Set-PingKey
     Start-BackupScript
   }
   finally {
