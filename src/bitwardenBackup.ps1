@@ -1,18 +1,51 @@
 #Requires -Version 7
+
+<#
+.SYNOPSIS
+
+Backup your Bitwarden vault.
+
+.DESCRIPTION
+
+Run this script to backup your Bitwarden vault.
+Also creates a scheduled task.
+
+For more info about how the data is stored, see:
+https://bitwarden.com/help/data-storage/
+
+For a way to decrypt the data, see:
+https://github.com/GurpreetKang/BitwardenDecrypt
+
+.INPUTS
+
+None
+
+.OUTPUTS
+
+None
+
+.NOTES
+
+    Author : David Torosyan <davidtorosyan.git@gmail.com>
+    Version : 1.0.0
+    Purpose : Backup Bitwarden
+
+#>
+
+[CmdletBinding()]
+param(
+  [parameter(Mandatory = $false, HelpMessage = "Display script version")]
+  [switch]
+  $version
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-# Run this script to backup your Bitwarden vault.
-# Also creates a scheduled task.
-# 
-# For more info about how the data is stored, see:
-# https://bitwarden.com/help/data-storage/
-#
-# For a way to decrypt the data, see:
-# https://github.com/GurpreetKang/BitwardenDecrypt
-
-# TODO
-# versioning
+if ($version) {
+  (Get-Help $MyInvocation.InvocationName -Full).PSExtended.AlertSet
+  exit
+}
 
 # constants
 $appRoot = Join-Path -Path $env:AppData -ChildPath "BitwardenBackup"
