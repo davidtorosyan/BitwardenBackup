@@ -12,7 +12,6 @@ $ErrorActionPreference = "Stop"
 # https://github.com/GurpreetKang/BitwardenDecrypt
 
 # TODO
-# fix healthchecks
 # versioning
 
 # constants
@@ -21,7 +20,8 @@ $appLogFile = Join-Path -Path $appRoot -ChildPath "logs\logs.txt"
 $appBackups = Join-Path -Path $appRoot -ChildPath "backups"
 
 $hcDomain = "hc-ping.com"
-$hcSlug = "bitwarden-backup"
+$hcSlugBackup = "bitwarden-backup"
+$hcSlugRecent = "bitwarden-backup-recent"
 
 $scheduledTaskName = "BitwardenBackupTask"
 $scheduledTaskDescription = "Task to backup Bitwarden data"
@@ -43,35 +43,51 @@ $PruningPatterns = @{
 
 $extractDatePattern = "^data_(.*)$"
 
+class BackupException : System.Exception {
+  BackupException([string] $message) {
+    parent::__construct($message)
+  }
+}
+
+
 function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
   try {
-    Set-PingKey
-    Start-Backup
-    Start-Prune
-    New-Task
+    Start-BackupScript
   }
   finally {
     Stop-Transcript
   }
 }
 
-function Get-PingUrl {
-  "https://$hcDomain/$env:HC_PING_KEY/$hcSlug"
+function Start-BackupScript {
+  Ping-Health "/start"
+  try {
+    Start-Backup
+    Start-Prune
+    New-Task
+    Ping-Health
+  }
+  catch [BackupException] {
+    $message = $_.Exception.Message
+    Write-Warning $message
+    Ping-Health "/fail" $message
+  }
+  catch {
+    Write-Warning "Unknown exception: $($_.Exception.Message)"
+    Ping-Health "/fail" "Unknown exception, check logs."
+  }
 }
 
-function Ping-Success {
-  param([string]$Message)
+function Ping-Health {
+  param(
+    [string]$Path = "",
+    [string]$Message = "",
+    [string]$Slug = $hcSlugBackup
+  )
 
-  $pingUrl = Get-PingUrl
+  $pingUrl = "https://$($hcDomain)/$($env:HC_PING_KEY)/$($Slug)$($path)"
   Invoke-RestMethod -Uri $pingUrl -Method Post -Body $Message | Out-Null
-}
-
-function Ping-Fail {
-  param([string]$Message)
-
-  $pingUrl = Get-PingUrl
-  Invoke-RestMethod -Uri $pingUrl/fail -Method Post -Body $Message | Out-Null
 }
 
 function Set-PingKey {
@@ -99,9 +115,7 @@ function Start-Backup {
   # Check source and destination
   $dataJson = "$env:AppData\Bitwarden\data.json"
   if (-not (Test-Path -Path $dataJson -PathType Leaf)) {
-    Write-Warning "Unable to find data.json. Have you installed Bitwarden? https://bitwarden.com/download/"
-    Ping-Fail "Unable to find data.json"
-    return
+    throw BackupException("Unable to find data.json. Have you installed Bitwarden? https://bitwarden.com/download/")
   }
 
   if (-not (Test-Path -Path $appBackups -PathType Container)) {
@@ -116,16 +130,14 @@ function Start-Backup {
     $timestamp = $result.Replace(":", "_")
   }
   else {
-    Write-Warning "Date string not found in the file."
-    Ping-Fail "Unable to find date string in data.json"
-    return
+    throw BackupException("Unable to find date string in data.json")
   }
 
   # Check to see if the backup already exists
   $backupName = "data_$timestamp.json"
   $backupJson = Join-Path -Path $appBackups -ChildPath $backupName
   if (Test-Path -Path $backupJson -PathType Leaf) {
-    # don't ping failure, since this could happen from just manually running too soon
+    # don't throw, since this could happen from just manually running too soon
     Write-Warning "Backup file already exists, is sync running?: $backupJson"
     return
   }
@@ -134,12 +146,13 @@ function Start-Backup {
   try {
     Copy-Item -Path $dataJson -Destination $backupJson -ErrorAction Stop
     Write-Host "Successfully backed up file to $backupJson"
-    Ping-Success "Backed up file to $backupJson"
   }
   catch {
     Write-Warning "Failed to copy file with error: $($_.Exception.Message)"
-    Ping-Fail "Failed to copy file to backup location"
+    throw BackupException("Failed to copy file to backup location")
   }
+
+  Ping-Health -Message "Backed up file: $backupJson" -Slug $hcSlugRecent
 }
 
 function Start-Prune {
@@ -169,6 +182,11 @@ function Start-Prune {
   Write-Host "From $($filenames.Count) files, pruning $($toDelete.Count)"
   foreach ($filename in $toDelete) {
     Remove-Item -Path $filename -Force
+  }
+
+  $remainingFiles = Get-ChildItem $appBackups
+  if ($remainingFiles.Count -eq 0) {
+    Ping-Health "/fail" -Message "Pruned all files!" -Slug $hcSlugRecent
   }
 }
 
