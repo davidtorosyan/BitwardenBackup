@@ -12,7 +12,7 @@ $ErrorActionPreference = "Stop"
 # https://github.com/GurpreetKang/BitwardenDecrypt
 
 # TODO
-# purge
+# fix healthchecks
 # versioning
 
 # constants
@@ -27,11 +27,28 @@ $scheduledTaskName = "BitwardenBackupTask"
 $scheduledTaskDescription = "Task to backup Bitwarden data"
 $scheduledTaskTime = '3am'
 
+$RetentionConfig = @{
+  Daily   = 7
+  Weekly  = 4
+  Monthly = 6
+  Yearly  = 1
+}
+
+$PruningPatterns = @{
+  Daily   = "%Y-%m-%d"
+  Weekly  = "%G-%V"
+  Monthly = "%Y-%m"
+  Yearly  = "%Y"
+}
+
+$extractDatePattern = "^data_(.*)$"
+
 function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
   try {
     Set-PingKey
     Start-Backup
+    Start-Prune
     New-Task
   }
   finally {
@@ -123,6 +140,82 @@ function Start-Backup {
     Write-Warning "Failed to copy file with error: $($_.Exception.Message)"
     Ping-Fail "Failed to copy file to backup location"
   }
+}
+
+function Start-Prune {
+  $jsonFiles = Get-ChildItem $appBackups
+
+  $filenameToDateMap = @{}
+  foreach ($file in $jsonFiles) {
+    if ($file.Basename -match $extractDatePattern) {
+      $dateString = $matches[1]
+      $dateTime = [DateTime]::ParseExact($dateString, "yyyy-MM-ddTHH_mm_ss.fffZ", $null)
+      $filenameToDateMap[$file.FullName] = $dateTime
+    }
+    else {
+      Write-Warning "Unable to extract date from file: $file"
+    }
+  }
+  
+  $keep = Get-AllKeeps $filenameToDateMap
+  $filenames = $filenameToDateMap.Keys
+  $toDelete = @($filenames | Where-Object { $keep -notcontains $_ })
+
+  if (-not $toDelete) {
+    Write-Host "No files to prune. Total files: $($filenames.Count)"
+    return
+  }
+
+  Write-Host "From $($filenames.Count) files, pruning $($toDelete.Count)"
+  foreach ($filename in $toDelete) {
+    Remove-Item -Path $filename -Force
+  }
+}
+
+function Get-AllKeeps {
+  param(
+    [Hashtable]$filenameToDateMap
+  )
+
+  $sortedFiles = $filenameToDateMap.GetEnumerator() | Sort-Object { $_.Value } -Descending
+  $keep = @()
+
+  foreach ($rule in $PruningPatterns.Keys) {
+    $pattern = $PruningPatterns[$rule]
+    $num = $RetentionConfig[$rule]
+
+    $keep += Get-Keeps $sortedFiles $pattern $num
+  }
+
+  return $keep | Sort-Object -unique
+}
+
+function Get-Keeps {
+  param(
+    [System.Object[]]$filenameToDateMap,
+    [string]$pattern,
+    [int]$num
+  )
+
+  $keep = @()
+
+  $last = $null
+  foreach ($fileEntry in $filenameToDateMap) {
+    $filename = $fileEntry.Key
+    $date = $fileEntry.Value
+
+    $period = Get-Date $date -UFormat $pattern
+
+    if ($period -ne $last) {
+      $last = $period
+      $keep += $filename
+      if ($keep.Length -ge $num) {
+        break
+      }
+    }
+  }
+
+  return $keep
 }
 
 function New-Task {
