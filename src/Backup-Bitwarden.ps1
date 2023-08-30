@@ -36,7 +36,11 @@ None
 param(
   [parameter(Mandatory = $false, HelpMessage = "Display script version")]
   [switch]
-  $version
+  $version,
+
+  [parameter(Mandatory = $false, HelpMessage = "Set from the task scheduler")]
+  [switch]
+  $scheduled
 )
 
 Set-StrictMode -Version Latest
@@ -82,10 +86,9 @@ class BackupException : System.Exception {
   }
 }
 
-
 function Start-Main {
   Start-Transcript -Path $appLogFile -Append -UseMinimalHeader
-  try {
+  try {  
     Set-PingKey
     Start-BackupScript
   }
@@ -128,6 +131,11 @@ function Set-PingKey {
   if ($env:HC_PING_KEY) {
     Write-Host "Ping key already set."
     return
+  }
+
+  if ($scheduled) {
+    Write-Warning "Need to set up a ping key to continue, but can't do that from Task Scheduler! Run this manually."
+    exit
   }
 
   Write-Host "To continue, you need to create a HealthChecks account."
@@ -280,7 +288,7 @@ function New-Task {
   
   # do this complicated incantation to have a very minimal window pop up
   # anything else requires admin permissions
-  $action = New-ScheduledTaskAction -Execute "cmd" -Argument "/c start /min `"`" pwsh -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $PSCommandPath"
+  $action = New-ScheduledTaskAction -Execute "cmd" -Argument "/c start /min `"`" pwsh -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File $PSCommandPath -scheduled"
   $trigger = New-ScheduledTaskTrigger -Daily -At $scheduledTaskTime
   Register-ScheduledTask -Action $action -Trigger $trigger -TaskName $scheduledTaskName -Description $scheduledTaskDescription | Out-Null
   Write-Host "Created new scheduled task called '$scheduledTaskName', set to run daily at $scheduledTaskTime."
